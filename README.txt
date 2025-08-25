@@ -1,22 +1,16 @@
-Inventory App (Mini KiotViet)
-=============================
+# Inventory App
 
-✅ Đăng nhập / Đăng xuất (user mặc định: admin / admin, lưu trạng thái trong SQLite)
-✅ Menu dưới cố định (icon + chữ)
-✅ Quản lý người dùng trong ⚙️ Cài đặt (Admin)
-✅ Quản lý sản phẩm + 📥 Import Excel/CSV (.xlsx/.xlsb/.csv)
-✅ Nhập kho / Xuất kho nhanh
-✅ (Placeholder) Hóa đơn
+Ứng dụng quản lý kho cơ bản với các tính năng:
 
-Cách chạy
----------
-1) Tạo môi trường và cài thư viện:
+- Đăng nhập/đăng xuất
+- Quản lý sản phẩm (thêm, sửa, xóa, tìm kiếm, phân trang, lọc nhóm)
+- Nhập kho, xuất kho và lịch sử
+- Quản lý hóa đơn
+- Responsive trên điện thoại
+
+## Cài đặt
+
+1. Clone repo  
+2. Tạo môi trường ảo và cài dependencies  
+   ```bash
    pip install -r requirements.txt
-
-2) Chạy ứng dụng:
-   streamlit run app.py
-
-File Excel mẫu
---------------
-Cột bắt buộc: name, price, stock
-Tuỳ chọn: sku, unit
