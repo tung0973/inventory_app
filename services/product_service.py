@@ -128,7 +128,7 @@ def record_stock_out(pid, qty):
     conn.commit()
     conn.close()
 
-def create_stock_out_receipt(items, note=""):
+def create_stock_out_receipt(items, note="", customer_id=None):
     conn = get_conn()
     cur = conn.cursor()
 
@@ -138,9 +138,9 @@ def create_stock_out_receipt(items, note=""):
 
     # Tạo phiếu xuất
     cur.execute("""
-        INSERT INTO stock_out_receipts (code, timestamp, note)
-        VALUES (?, ?, ?)
-    """, (code, timestamp, note))
+        INSERT INTO stock_out_receipts (code, timestamp, note,customer_id)
+        VALUES (?, ?, ?,?)
+    """, (code, timestamp, note, customer_id))
     receipt_id = cur.lastrowid
 
     for item in items:
@@ -159,11 +159,63 @@ def create_stock_out_receipt(items, note=""):
             UPDATE products SET stock = stock - ?
             WHERE id = ? AND stock >= ?
         """, (qty, pid, qty))
-
+    
     conn.commit()
     conn.close()
 
+def update_receipt(code, customer_name, timestamp, note, items):
+    conn = sqlite3.connect("inventory.db")
+    cursor = conn.cursor()
 
+    # Cập nhật thông tin chung của phiếu
+    cursor.execute("""
+        UPDATE stock_out_receipts
+        SET customer_name = ?, timestamp = ?, note = ?
+        WHERE code = ?
+    """, (customer_name, timestamp, note, code))
+
+    # Xóa toàn bộ sản phẩm cũ trong phiếu
+    cursor.execute("DELETE FROM receipt_items WHERE receipt_code = ?", (code,))
+
+    # Thêm lại danh sách sản phẩm mới
+    for name, qty, price in items:
+        cursor.execute("""
+            INSERT INTO receipt_items (receipt_code, product_name, quantity, price)
+            VALUES (?, ?, ?, ?)
+        """, (code, name, qty, price))
+
+    conn.commit()
+    conn.close()
+def fetch_customers():
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("SELECT id, name, phone, address FROM customers ORDER BY name")
+    rows = cur.fetchall()
+    conn.close()
+    return rows
+def create_customer(name, phone, address):
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO customers (name, phone, address) VALUES (?, ?, ?)",
+        (name, phone, address)
+    )
+    conn.commit()
+    return cursor.lastrowid
+
+def delete_customer(customer_id):
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM customers WHERE id = ?", (customer_id,))
+    conn.commit()
+def update_customer(customer_id, name, phone, address):
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE customers SET name = ?, phone = ?, address = ? WHERE id = ?",
+        (name, phone, address, customer_id)
+    )
+    conn.commit()
 def record_stock_out_receipt(entries, timestamp, note=""):
     """
     entries: List of tuples (product_id, quantity, price)
@@ -182,6 +234,7 @@ def record_stock_out_receipt(entries, timestamp, note=""):
         VALUES (?, ?, ?)
     """, (code, timestamp, note))
     receipt_id = cur.lastrowid
+
 
     # Ghi từng dòng xuất kho
     for pid, qty, price in entries:
@@ -241,8 +294,9 @@ def fetch_stock_out_receipts():
     conn = get_conn()
     cur = conn.cursor()
     cur.execute("""
-        SELECT r.code, r.timestamp, r.note, p.name, so.quantity, so.price
+        SELECT r.code, r.timestamp, r.note, c.name, p.name, so.quantity, so.price
         FROM stock_out_receipts r
+        LEFT JOIN customers c ON r.customer_id = c.id
         JOIN stock_out so ON so.receipt_id = r.id
         JOIN products p ON so.product_id = p.id
         ORDER BY r.timestamp DESC, r.id DESC
@@ -250,6 +304,33 @@ def fetch_stock_out_receipts():
     rows = cur.fetchall()
     conn.close()
     return rows
+
+def get_product_history(product_id, limit=20):
+    conn = get_conn()
+    cur = conn.cursor()
+
+    # Lấy lịch sử nhập
+    cur.execute("""
+        SELECT 'nhập' AS type, quantity, timestamp, receipt_id
+        FROM stock_in
+        WHERE product_id = ?
+    """, (product_id,))
+    stock_in = cur.fetchall()
+
+    # Lấy lịch sử xuất
+    cur.execute("""
+        SELECT 'xuất' AS type, quantity, timestamp, receipt_id
+        FROM stock_out
+        WHERE product_id = ?
+    """, (product_id,))
+    stock_out = cur.fetchall()
+
+    # Gộp và sắp xếp theo thời gian giảm dần
+    history = stock_in + stock_out
+    history.sort(key=lambda x: x[2], reverse=True)
+
+    conn.close()
+    return history[:limit]
 
 def update_stock_from_excel(df):
     """

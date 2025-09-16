@@ -25,12 +25,11 @@ st.markdown(
         left: 0;
         right: 0;
         background-color: white;
-        padding: 0.5rem 1rem;
         box-shadow: 0 -2px 5px rgba(0, 0, 0, 0.1);
         z-index: 999;
       }
       .streamlit-expanderHeader, .element-container {
-        margin-bottom: 4rem;
+        margin-bottom: 1px;
       }
     </style>
     """,

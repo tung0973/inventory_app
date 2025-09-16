@@ -1,6 +1,7 @@
 import streamlit as st
 from database import get_conn
 from utils.helpers import safe_int, safe_float
+from services.product_service import get_product_history
 
 # 🔒 Cache danh mục
 @st.cache_data(ttl=300)
@@ -66,6 +67,28 @@ def delete_product(id):
 # 🧩 Trang chính
 def product_page():
     st.header("📦 Danh sách sản phẩm")
+    st.markdown("""
+    <style>
+        .stTextInput, .stNumberInput, .stButton, .stCheckbox {
+            margin-bottom: 1px !important;
+        }
+        .stExpander {
+            padding: 1px !important;
+        }
+        .stMarkdown {
+            margin: 0px !important;
+        }
+            
+    </style>
+""", unsafe_allow_html=True)
+    st.markdown("""
+    <style>
+        div[data-testid="stExpander"] {
+            margin-bottom: 1px;
+            padding: 1px;
+        }
+    </style>
+""", unsafe_allow_html=True)
 
     # 1. Tìm kiếm
     search = st.text_input("🔍 Tìm kiếm sản phẩm", "")
@@ -76,7 +99,7 @@ def product_page():
     selected = st.selectbox("📂 Chọn danh mục", options)
 
     # 3. Phân trang
-    PAGE_SIZE = 20
+    PAGE_SIZE = 10
     if "page_number" not in st.session_state:
         st.session_state.page_number = 1
 
@@ -87,30 +110,53 @@ def product_page():
         st.info("Không có sản phẩm phù hợp.")
         return
 
-    # 5. Hiển thị sản phẩm
+
+    # 5. Hiển thị sản phẩm theo dạng thẻ
+    
     st.subheader(f"📄 Trang {st.session_state.page_number}")
     for pid, name, raw_price, raw_stock in rows:
         tồn_kho = safe_int(raw_stock)
-        with st.expander(f"{name} - 📦 Tồn kho: {tồn_kho} "):
-            new_name  = st.text_input("Tên sản phẩm", value=name, key=f"name_{pid}")
-            new_price = st.number_input("Giá (₫)", value=safe_float(raw_price), key=f"price_{pid}")
-            new_stock = st.number_input("Tồn kho", value=tồn_kho, key=f"stock_{pid}")
+        giá = safe_float(raw_price)
+    
+    # 👉 Hiển thị thông tin cơ bản, mở rộng khi nhấn
+        with st.expander(f"🛒 {name} — 📦 Tồn kho: {tồn_kho}", expanded=False):
+            # 🎯 Chỉnh sửa sản phẩm
+            col_name, col_price, col_stock = st.columns(3)
+            with col_name:
+                new_name = st.text_input("Tên", value=name, key=f"name_{pid}")
+            with col_price:
+                new_price = st.number_input("Giá (₫)", value=giá, key=f"price_{pid}")
+            with col_stock:
+                new_stock = st.number_input("Tồn kho", value=tồn_kho, key=f"stock_{pid}")
 
             col1, col2 = st.columns(2)
             with col1:
-                if st.button("💾 Lưu thay đổi", key=f"save_{pid}"):
+                if st.button("💾 Lưu", key=f"save_{pid}"):
                     update_product(pid, new_name, new_price, new_stock)
                     st.success("✅ Đã cập nhật sản phẩm.")
                     st.rerun()
             with col2:
-                confirm = st.checkbox("Tôi xác nhận muốn xóa", key=f"confirm_{pid}")
-                if st.button("🗑️ Xóa sản phẩm", key=f"delete_{pid}"):
+                confirm = st.checkbox("Xác nhận xóa", key=f"confirm_{pid}")
+                if st.button("🗑️ Xóa", key=f"delete_{pid}"):
                     if confirm:
                         delete_product(pid)
                         st.warning("🗑️ Đã xóa sản phẩm.")
                         st.rerun()
                     else:
                         st.error("❗ Vui lòng xác nhận trước khi xóa.")
+
+            # 📜 Lịch sử xuất nhập
+            history = get_product_history(pid)[:10]
+            st.markdown("### 📜 Lịch sử xuất nhập")
+            if history:
+                for t_type, qty, time, receipt_id in history:
+                    icon = "📥" if t_type == "nhập" else "📤"
+                    st.markdown(f"{icon} **{t_type.capitalize()}** {qty} cái — `{time}`")
+                    if receipt_id:
+                        st.caption(f"🧾 Mã phiếu: {receipt_id}")
+            else:
+                st.info("Chưa có lịch sử xuất nhập.")
+
 
     # 6. Điều hướng phân trang
     col1, col2, col3 = st.columns([1, 2, 1])

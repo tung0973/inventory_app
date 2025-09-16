@@ -17,8 +17,8 @@ def init_db():
     cur = conn.cursor()
 
     cur.execute("PRAGMA foreign_keys = ON")
+    
 
-    # Tạo bảng
     cur.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -47,6 +47,8 @@ def init_db():
             stock INTEGER DEFAULT 0
         )
     """)
+
+
 
     cur.execute("PRAGMA table_info(products)")
     columns = [col[1] for col in cur.fetchall()]
@@ -121,5 +123,22 @@ def init_db():
     if cur.fetchone()[0] == 0:
         cur.execute("INSERT INTO users (username, password) VALUES (?, ?)", ("admin", "admin123"))
 
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS customers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        phone TEXT,
+        address TEXT
+       )
+    """)
+
+    cur.execute("PRAGMA table_info(stock_out_receipts)")
+    columns = [col[1] for col in cur.fetchall()]
+    if "customer_id" not in columns:
+        cur.execute("ALTER TABLE stock_out_receipts ADD COLUMN customer_id INTEGER REFERENCES customers(id)")
+
     conn.commit()
     conn.close()
+
+
+    

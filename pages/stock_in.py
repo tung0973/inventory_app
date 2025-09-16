@@ -91,6 +91,12 @@ def import_stock_page():
                 st.error("❌ File thiếu cột bắt buộc: sku, name, stock")
                 return
 
+            # 👉 Thay thế NaN trong cột 'stock' bằng 0
+            df['stock'] = df['stock'].fillna(0)
+
+            # 👉 Chuyển kiểu dữ liệu sang int
+            df['stock'] = df['stock'].astype(int)
+
             st.dataframe(df)
 
             if st.button("🚀 Cập nhật tồn kho"):
