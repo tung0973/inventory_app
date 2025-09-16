@@ -1,24 +1,20 @@
 import sqlite3
-import os
 
 DB_PATH = "inventory.db"
 
 def get_conn():
     return sqlite3.connect(DB_PATH, check_same_thread=False)
 
-def ensure_price_column(cur):
-    cur.execute("PRAGMA table_info(stock_out)")
-    columns = [row[1] for row in cur.fetchall()]
-    if "price" not in columns:
-        cur.execute("ALTER TABLE stock_out ADD COLUMN price REAL DEFAULT 0")
-
 def init_db():
     conn = get_conn()
     cur = conn.cursor()
 
+    # Bật ràng buộc khóa ngoại
     cur.execute("PRAGMA foreign_keys = ON")
-    
 
+    # ===== TẠO BẢNG =====
+
+    # Người dùng
     cur.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -27,15 +23,7 @@ def init_db():
         )
     """)
 
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS stock_in_receipts (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            code TEXT UNIQUE NOT NULL,
-            timestamp TEXT NOT NULL,
-            note TEXT
-        )
-    """)
-
+    # Sản phẩm
     cur.execute("""
         CREATE TABLE IF NOT EXISTS products (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -48,13 +36,17 @@ def init_db():
         )
     """)
 
+    # Phiếu nhập kho
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS stock_in_receipts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            code TEXT UNIQUE NOT NULL,
+            timestamp TEXT NOT NULL,
+            note TEXT
+        )
+    """)
 
-
-    cur.execute("PRAGMA table_info(products)")
-    columns = [col[1] for col in cur.fetchall()]
-    if "attributes" not in columns:
-        cur.execute("ALTER TABLE products ADD COLUMN attributes TEXT")
-
+    # Chi tiết nhập kho
     cur.execute("""
         CREATE TABLE IF NOT EXISTS stock_in (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -65,6 +57,7 @@ def init_db():
         )
     """)
 
+    # Phiếu xuất kho
     cur.execute("""
         CREATE TABLE IF NOT EXISTS stock_out_receipts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -74,16 +67,7 @@ def init_db():
         )
     """)
 
-    cur.execute("PRAGMA table_info(stock_out)")
-    columns = [col[1] for col in cur.fetchall()]
-    if "receipt_id" not in columns:
-        cur.execute("ALTER TABLE stock_out ADD COLUMN receipt_id INTEGER")
-
-    cur.execute("PRAGMA table_info(stock_in)")
-    columns = [col[1] for col in cur.fetchall()]
-    if "receipt_id" not in columns:
-        cur.execute("ALTER TABLE stock_in ADD COLUMN receipt_id INTEGER")
-
+    # Chi tiết xuất kho
     cur.execute("""
         CREATE TABLE IF NOT EXISTS stock_out (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -94,9 +78,7 @@ def init_db():
         )
     """)
 
-    # Đảm bảo cột price tồn tại
-    ensure_price_column(cur)
-
+    # Hóa đơn
     cur.execute("""
         CREATE TABLE IF NOT EXISTS invoices (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -106,6 +88,7 @@ def init_db():
         )
     """)
 
+    # Chi tiết hóa đơn
     cur.execute("""
         CREATE TABLE IF NOT EXISTS invoice_items (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -118,27 +101,38 @@ def init_db():
         )
     """)
 
-    # Tạo user mặc định nếu chưa có
-    cur.execute("SELECT COUNT(*) FROM users WHERE username = ?", ("admin",))
-    if cur.fetchone()[0] == 0:
-        cur.execute("INSERT INTO users (username, password) VALUES (?, ?)", ("admin", "admin123"))
-
+    # Khách hàng
     cur.execute("""
-    CREATE TABLE IF NOT EXISTS customers (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        phone TEXT,
-        address TEXT
-       )
+        CREATE TABLE IF NOT EXISTS customers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            phone TEXT,
+            address TEXT
+        )
     """)
 
-    cur.execute("PRAGMA table_info(stock_out_receipts)")
-    columns = [col[1] for col in cur.fetchall()]
-    if "customer_id" not in columns:
-        cur.execute("ALTER TABLE stock_out_receipts ADD COLUMN customer_id INTEGER REFERENCES customers(id)")
+    conn.commit()
+
+    # ===== THÊM CỘT BỔ SUNG =====
+
+    def add_column_if_missing(table, column, definition):
+        cur.execute(f"PRAGMA table_info({table})")
+        columns = [col[1] for col in cur.fetchall()]
+        if column not in columns:
+            cur.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+            conn.commit()
+
+    add_column_if_missing("products", "attributes", "TEXT")
+    add_column_if_missing("stock_in", "receipt_id", "INTEGER")
+    add_column_if_missing("stock_out", "receipt_id", "INTEGER")
+    add_column_if_missing("stock_out", "price", "REAL DEFAULT 0")
+    add_column_if_missing("stock_out_receipts", "customer_id", "INTEGER REFERENCES customers(id)")
+
+    # ===== TẠO USER MẶC ĐỊNH =====
+
+    cur.execute("SELECT COUNT(*) FROM users WHERE username = ?", ("admin",))
+    if cur.fetchone()[0] == 0:
+        cur.execute("INSERT INTO users (username, password) VALUES (?, ?)", ("admin", "admin"))
 
     conn.commit()
     conn.close()
-
-
-    
