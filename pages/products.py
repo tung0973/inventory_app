@@ -3,7 +3,7 @@ from database import get_conn
 from utils.helpers import safe_int, safe_float
 from services.product_service import get_product_history
 
-# 🔒 Cache danh mục
+# 🔒 Cache danh mục sản phẩm
 @st.cache_data(ttl=300)
 def get_categories():
     conn = get_conn()
@@ -18,9 +18,9 @@ def get_categories():
     conn.close()
     return categories
 
-# 🔒 Cache toàn bộ sản phẩm theo điều kiện
+# 🔒 Cache danh sách sản phẩm theo điều kiện lọc
 @st.cache_data(ttl=60)
-def get_filtered_products(search, selected):
+def get_filtered_products(search, selected_category):
     conn = get_conn()
     cur = conn.cursor()
 
@@ -31,9 +31,9 @@ def get_filtered_products(search, selected):
         sql += " AND name LIKE ?"
         params.append(f"%{search}%")
 
-    if selected != "Tất cả":
+    if selected_category and selected_category != "Tất cả":
         sql += " AND category = ?"
-        params.append(selected)
+        params.append(selected_category)
 
     sql += " ORDER BY name"
     cur.execute(sql, params)
@@ -41,7 +41,7 @@ def get_filtered_products(search, selected):
     conn.close()
     return rows
 
-# 🛠️ Cập nhật sản phẩm
+# 🛠️ Cập nhật thông tin sản phẩm
 def update_product(id, name, price, stock):
     conn = get_conn()
     cur = conn.cursor()
@@ -61,38 +61,52 @@ def delete_product(id):
     conn.commit()
     conn.close()
 
-# 🧩 Trang chính
+# 🧩 Trang quản lý sản phẩm
 def product_page():
     st.header("📦 Danh sách sản phẩm")
 
-    # 1. Tìm kiếm và lọc danh mục
-    search = st.text_input("🔍 Tìm kiếm sản phẩm", "")
-    categories = get_categories()
-    selected = st.selectbox("📂 Chọn danh mục", ["Tất cả"] + categories)
+    # 1. Bộ lọc tìm kiếm và danh mục
+    col_search, col_category = st.columns([2, 2])
+    with col_search:
+        search = st.text_input("🔍 Tìm kiếm theo tên sản phẩm", "")
+    with col_category:
+        categories = get_categories()
+        selected_category = st.selectbox("📂 Lọc theo danh mục", ["Tất cả"] + categories)
 
-    # 2. Phân trang
+    # 2. Reset phân trang khi thay đổi bộ lọc
+    if "last_filter" not in st.session_state:
+        st.session_state.last_filter = (search, selected_category)
+
+    if (search, selected_category) != st.session_state.last_filter:
+        st.session_state.page_number = 1
+        st.session_state.last_filter = (search, selected_category)
+
+    # 3. Phân trang
     PAGE_SIZE = 10
     if "page_number" not in st.session_state:
         st.session_state.page_number = 1
 
-    # 3. Truy vấn toàn bộ sản phẩm đã lọc
-    all_rows = get_filtered_products(search, selected)
+    # 4. Truy vấn sản phẩm đã lọc
+    all_rows = get_filtered_products(search, selected_category)
     total_pages = max(1, (len(all_rows) + PAGE_SIZE - 1) // PAGE_SIZE)
     start = (st.session_state.page_number - 1) * PAGE_SIZE
     end = start + PAGE_SIZE
     rows = all_rows[start:end]
 
+    # 5. Hiển thị kết quả
+    st.caption(f"🔎 Có {len(all_rows)} sản phẩm phù hợp.")
+    st.subheader(f"📄 Trang {st.session_state.page_number} / {total_pages}")
+
     if not rows:
         st.info("Không có sản phẩm phù hợp.")
         return
 
-    # 4. Hiển thị sản phẩm theo dạng thẻ
-    st.subheader(f"📄 Trang {st.session_state.page_number} / {total_pages}")
     for pid, name, raw_price, raw_stock in rows:
         tồn_kho = safe_int(raw_stock)
         giá = safe_float(raw_price)
 
         with st.expander(f"🛒 {name} — 📦 Tồn kho: {tồn_kho}", expanded=False):
+            # Chỉnh sửa sản phẩm
             col_name, col_price, col_stock = st.columns(3)
             with col_name:
                 new_name = st.text_input("Tên", value=name, key=f"name_{pid}")
@@ -117,7 +131,7 @@ def product_page():
                     else:
                         st.error("❗ Vui lòng xác nhận trước khi xóa.")
 
-            # 📜 Lịch sử xuất nhập
+            # Lịch sử xuất nhập
             history = get_product_history(pid)[:10]
             st.markdown("### 📜 Lịch sử xuất nhập")
             if history:
@@ -129,14 +143,14 @@ def product_page():
             else:
                 st.info("Chưa có lịch sử xuất nhập.")
 
-    # 5. Điều hướng phân trang
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col1:
+    # 6. Điều hướng phân trang
+    col_prev, col_info, col_next = st.columns([1, 2, 1])
+    with col_prev:
         if st.session_state.page_number > 1:
             if st.button("⬅️ Trang trước"):
                 st.session_state.page_number -= 1
                 st.rerun()
-    with col3:
+    with col_next:
         if st.session_state.page_number < total_pages:
             if st.button("➡️ Trang tiếp theo"):
                 st.session_state.page_number += 1

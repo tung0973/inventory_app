@@ -1,35 +1,47 @@
 import streamlit as st
 
 def bottom_nav():
-    # Danh sách các trang và nhãn hiển thị
+    # 📄 Danh sách các trang và nhãn hiển thị
     pages = {
-        "products": ("📦 Sản phẩm", "products"),
-        "in":       ("📥 Nhập kho", "in"),
-        "out":      ("📤 Xuất kho", "out"),
-        "invoices": ("🧾 Hóa đơn", "invoices"),
-        "settings": ("⚙️ Cài đặt", "settings")
+        "products": "📦 Sản phẩm",
+        "in": "📥 Nhập kho",
+        "out": "📤 Xuất kho",
+        "invoices": "🧾 Hóa đơn",
+        "settings": "⚙️ Cài đặt"
     }
 
-    # Trang đang được chọn
+    # 🧭 Trang đang được chọn
     active_page = st.session_state.get("page", "products")
 
-    # CSS cho thanh điều hướng
+    # 🎨 CSS cho thanh điều hướng ngang chia đều
     st.markdown("""
         <style>
             .bottom_nav {
-                width: 100%;
+                display: flex;
+                justify-content: space-between;
                 background-color: #f0f2f6;
-                padding: 5px 5px;
+                padding: 10px;
                 border-radius: 12px;
                 box-shadow: 0 -2px 6px rgba(0,0,0,0.05);
-                font-family: 'Segoe UI', sans-serif;
+                margin-top: 20px;
+                position: fixed;
+                bottom: 0;
+                left: 0;
+                right: 0;
+                z-index: 999;
             }
             .nav-button {
+                flex: 1;
                 text-align: center;
-                padding: 10px;
+                padding: 10px 0;
+                margin: 0 4px;
                 border-radius: 8px;
                 font-weight: 500;
+                background-color: transparent;
+                border: none;
+                cursor: pointer;
                 transition: background-color 0.2s ease;
+                font-size: 16px;
             }
             .nav-button:hover {
                 background-color: #e0e0e0;
@@ -41,18 +53,20 @@ def bottom_nav():
         </style>
     """, unsafe_allow_html=True)
 
-    # Bắt đầu thanh điều hướng
+    # 🚀 Bắt đầu thanh điều hướng
     st.markdown('<div class="bottom_nav">', unsafe_allow_html=True)
 
+    # 🔘 Tạo các nút điều hướng chia đều
     cols = st.columns(len(pages))
-    for idx, (key, (label, param)) in enumerate(pages.items()):
-        with cols[idx]:
-            if active_page == key:
+    for i, (key, label) in enumerate(pages.items()):
+        with cols[i]:
+            if st.button(label, key=f"nav_{key}"):
+                st.session_state.page = key
+                st.rerun()
+            elif active_page == key:
                 st.markdown(f"<div class='nav-button nav-active'>{label}</div>", unsafe_allow_html=True)
             else:
-                if st.button(label, key=f"nav_{key}"):
-                    st.session_state.page = param
-                    st.rerun()
+                st.markdown(f"<div class='nav-button'>{label}</div>", unsafe_allow_html=True)
 
-    # Kết thúc thanh điều hướng
+    # 🔚 Kết thúc thanh điều hướng
     st.markdown('</div>', unsafe_allow_html=True)
