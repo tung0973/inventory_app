@@ -67,32 +67,35 @@ def delete_product(pid):
     conn.close()
 
 def record_stock_in_receipt(entries, timestamp, note=""):
-    """
-    entries: List of tuples (product_id, quantity)
-    timestamp: string "YYYY-MM-DD HH:MM:SS"
-    note: ghi chú cho phiếu nhập
-    """
     conn = get_conn()
     cur = conn.cursor()
 
-    # Tạo mã phiếu nhập theo ngày, ví dụ: PN20250825-001
+    # Tạo mã phiếu nhập
     cur.execute("SELECT COUNT(*) FROM stock_in_receipts WHERE date(timestamp) = date(?)", (timestamp,))
     count_today = cur.fetchone()[0] + 1
     code = f"PN{timestamp[:10].replace('-', '')}-{count_today:03d}"
 
-    # Tạo phiếu nhập
+    # Ghi phiếu nhập
     cur.execute("""
         INSERT INTO stock_in_receipts (code, timestamp, note)
         VALUES (?, ?, ?)
     """, (code, timestamp, note))
     receipt_id = cur.lastrowid
 
-    # Ghi từng dòng nhập kho
+    # Ghi chi tiết nhập kho
     stock_entries = [(receipt_id, pid, qty, timestamp) for pid, qty in entries]
     cur.executemany("""
         INSERT INTO stock_in (receipt_id, product_id, quantity, timestamp)
         VALUES (?, ?, ?, ?)
     """, stock_entries)
+
+    # 👉 Cập nhật tồn kho
+    for pid, qty in entries:
+        cur.execute("""
+            UPDATE products
+            SET stock = stock + ?
+            WHERE id = ?
+        """, (qty, pid))
 
     conn.commit()
     conn.close()
@@ -119,6 +122,69 @@ def record_stock_in(entries):
     conn.commit()
     conn.close()
 
+def delete_stock_in_receipt(code):
+    conn = get_conn()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT si.product_id, si.quantity
+        FROM stock_in si
+        JOIN stock_in_receipts sr ON si.receipt_id = sr.id
+        WHERE sr.code = ?
+    """, (code,))
+    items = cur.fetchall()
+
+    for pid, qty in items:
+        cur.execute("UPDATE products SET stock = stock - ? WHERE id = ?", (qty, pid))
+
+    cur.execute("DELETE FROM stock_in WHERE receipt_id = (SELECT id FROM stock_in_receipts WHERE code = ?)", (code,))
+    cur.execute("DELETE FROM stock_in_receipts WHERE code = ?", (code,))
+
+    conn.commit()
+    conn.close()
+
+def edit_stock_in_receipt(code):
+    import streamlit as st
+    conn = get_conn()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT si.product_id, si.quantity, sr.note
+        FROM stock_in si
+        JOIN stock_in_receipts sr ON si.receipt_id = sr.id
+        WHERE sr.code = ?
+    """, (code,))
+    rows = cur.fetchall()
+
+    new_note = st.text_input("📝 Ghi chú mới", value=rows[0][2])
+    new_entries = []
+
+    with st.form("edit_form"):
+        for pid, old_qty, _ in rows:
+            new_qty = st.number_input(f"Sửa số lượng cho sản phẩm ID {pid}", value=old_qty, min_value=0, step=1, key=f"edit_qty_{pid}")
+            new_entries.append((pid, new_qty))
+
+        submitted = st.form_submit_button("💾 Lưu thay đổi")
+        if submitted:
+            for pid, new_qty in new_entries:
+                old_qty = next(q for p, q, _ in rows if p == pid)
+                delta = new_qty - old_qty
+                cur.execute("UPDATE products SET stock = stock + ? WHERE id = ?", (delta, pid))
+
+            for pid, new_qty in new_entries:
+                cur.execute("""
+                    UPDATE stock_in
+                    SET quantity = ?
+                    WHERE product_id = ? AND receipt_id = (SELECT id FROM stock_in_receipts WHERE code = ?)
+                """, (new_qty, pid, code))
+
+            cur.execute("UPDATE stock_in_receipts SET note = ? WHERE code = ?", (new_note, code))
+
+            conn.commit()
+            conn.close()
+            st.success(f"✅ Đã sửa phiếu nhập {code}")
+            del st.session_state.editing_code
+            st.rerun()
 
 def record_stock_out(pid, qty):
     conn = get_conn()
@@ -162,30 +228,36 @@ def create_stock_out_receipt(items, note="", customer_id=None):
     
     conn.commit()
     conn.close()
-
-def update_receipt(code, customer_name, timestamp, note, items):
-    conn = sqlite3.connect("inventory.db")
+def get_product_id_by_name(product_name):
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM products WHERE name = ?", (product_name,))
+    result = cursor.fetchone()
+    conn.close()
+    return result[0] if result else None
+def update_receipt(code, customer_id, timestamp, note, items):
+    conn = get_conn()
     cursor = conn.cursor()
 
-    # Cập nhật thông tin chung của phiếu
     cursor.execute("""
         UPDATE stock_out_receipts
-        SET customer_name = ?, timestamp = ?, note = ?
+        SET customer_id = ?, timestamp = ?, note = ?
         WHERE code = ?
-    """, (customer_name, timestamp, note, code))
+    """, (customer_id, timestamp, note, code))
 
-    # Xóa toàn bộ sản phẩm cũ trong phiếu
-    cursor.execute("DELETE FROM receipt_items WHERE receipt_code = ?", (code,))
-
-    # Thêm lại danh sách sản phẩm mới
+    cursor.execute("DELETE FROM stock_out WHERE receipt_id = (SELECT id FROM stock_out_receipts WHERE code = ?)", (code,))
+    
     for name, qty, price in items:
+        
+        product_id = get_product_id_by_name(name)
         cursor.execute("""
-            INSERT INTO receipt_items (receipt_code, product_name, quantity, price)
-            VALUES (?, ?, ?, ?)
-        """, (code, name, qty, price))
+            INSERT INTO stock_out (product_id, quantity, price, receipt_id)
+            VALUES (?, ?, ?, (SELECT id FROM stock_out_receipts WHERE code = ?))
+        """, (product_id, qty, price, code))
 
     conn.commit()
     conn.close()
+
 def fetch_customers():
     conn = get_conn()
     cur = conn.cursor()

@@ -2,6 +2,8 @@ import streamlit as st
 from datetime import datetime
 from services.product_service import fetch_products, fetch_stock_in_receipts, record_stock_in_receipt
 from services.product_service import update_stock_from_excel
+from services.product_service import delete_stock_in_receipt, edit_stock_in_receipt  # Thêm các hàm xử lý
+from services.receipt_export import export_receipt_as_image
 
 
 def stock_in_page():
@@ -49,15 +51,15 @@ def show_manual_stock_in():
             st.success(f"✅ Đã tạo phiếu nhập **{code}** với {len(entries)} sản phẩm vào lúc {timestamp}")
             st.rerun()
 
+    # 📜 Lịch sử phiếu nhập kho
     st.subheader("📜 Lịch sử phiếu nhập kho")
-    receipts = fetch_stock_in_receipts() 
-    # Gom nhóm theo mã phiếu
+    receipts = fetch_stock_in_receipts()
+
     from collections import defaultdict
     grouped = defaultdict(list)
     for code, ts, note, name, qty in receipts:
         grouped[code].append((ts, note, name, qty))
 
-    # Hiển thị từng phiếu trong expander
     for code, items in list(grouped.items())[:50]:
         ts, note, _, _ = items[0]
         with st.expander(f"🧾 Phiếu nhập {code} – {ts}", expanded=False):
@@ -65,6 +67,35 @@ def show_manual_stock_in():
                 st.caption(f"📝 {note}")
             for _, _, name, qty in items:
                 st.write(f"• {name}: +{qty}")
+
+            col1, col2,col3 = st.columns(3)
+            with col1:
+                if st.button(f"✏️ Sửa phiếu {code}", key=f"edit_{code}"):
+                    st.session_state.editing_code = code
+            with col2:
+                if st.button(f"🗑️ Xóa phiếu {code}", key=f"delete_{code}"):
+                    st.session_state.confirm_delete = code
+            with col3:
+                if st.button(f"📸 Xuất ảnh phiếu {code}", key=f"export_{code}"):
+                    export_receipt_as_image(code, items, ts, note)
+
+            # Xác nhận xóa
+            if st.session_state.get("confirm_delete") == code:
+                st.warning(f"⚠️ Bạn có chắc muốn xóa phiếu nhập {code}?")
+                confirm_col1, confirm_col2 = st.columns(2)
+                with confirm_col1:
+                    if st.button("✅ Xác nhận", key=f"confirm_yes_{code}"):
+                        delete_stock_in_receipt(code)
+                        st.success(f"✅ Đã xóa phiếu nhập {code}")
+                        del st.session_state.confirm_delete
+                        st.rerun()
+                with confirm_col2:
+                    if st.button("❌ Hủy", key=f"confirm_no_{code}"):
+                        del st.session_state.confirm_delete
+
+    # Form sửa phiếu nhập
+    if "editing_code" in st.session_state:
+        edit_stock_in_receipt(st.session_state.editing_code)
 
 import streamlit as st
 import pandas as pd
@@ -91,11 +122,14 @@ def import_stock_page():
                 st.error("❌ File thiếu cột bắt buộc: sku, name, stock")
                 return
 
-            # 👉 Thay thế NaN trong cột 'stock' bằng 0
-            df['stock'] = df['stock'].fillna(0)
+            # 👉 Làm sạch dữ liệu cột 'stock'
+            df['stock'] = pd.to_numeric(df['stock'], errors='coerce').fillna(0).astype(int)
 
-            # 👉 Chuyển kiểu dữ liệu sang int
-            df['stock'] = df['stock'].astype(int)
+            # 👉 Hiển thị sản phẩm có tồn kho bằng 0 để kiểm tra
+            zero_stock_items = df[df['stock'] == 0]
+            if not zero_stock_items.empty:
+                st.warning("⚠️ Có sản phẩm có tồn kho bằng 0:")
+                st.dataframe(zero_stock_items)
 
             st.dataframe(df)
 
@@ -106,3 +140,4 @@ def import_stock_page():
 
         except Exception as e:
             st.error(f"⚠️ Lỗi khi xử lý file: {e}")
+

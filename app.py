@@ -15,26 +15,7 @@ st.set_page_config(page_title="Inventory App", layout="wide")
 mobile_css()
 init_db()
 
-# CSS cho thanh nav
-st.markdown(
-    """
-    <style>
-      .fixed-bottom {
-        position: fixed;
-        bottom: 0;
-        left: 0;
-        right: 0;
-        background-color: white;
-        box-shadow: 0 -2px 5px rgba(0, 0, 0, 0.1);
-        z-index: 999;
-      }
-      .streamlit-expanderHeader, .element-container {
-        margin-bottom: 1px;
-      }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
+
 
 # Danh sách route
 ROUTES = {
@@ -68,10 +49,13 @@ def main():
         )
 
     # Chạy trang tương ứng
-    ROUTES.get(page, product_page)()
+    with st.spinner("🔄 Đang tải trang..."):
+        ROUTES.get(page, product_page)()
+    
 
     # Bottom navigation (cập nhật page trong session_state)
     bottom_nav()
+    
 
 if __name__ == "__main__":
     main()
